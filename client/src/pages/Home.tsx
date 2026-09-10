@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { saveOperation } from "@/lib/operations";
 
 type Action = "production" | "sortie" | "retour" | "vente" | null;
 
@@ -53,18 +54,28 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quantity, setQuantity] = useState("250");
   const [retours, setRetours] = useState("95");
+  const [stock, setStock] = useState(1085);
 
   const openAction = (action: Action) => setActiveAction(action);
   const closeAction = () => setActiveAction(null);
 
-  const saveAction = () => {
+  const saveAction = async () => {
     const messages = {
       production: `Production enregistrée : ${quantity} packs.`,
       sortie: "Sortie enregistrée : 150 packs confiés à Moussa.",
       retour: `Retour enregistré : ${retours} packs revenus, 55 écoulés.`,
       vente: "Vente enregistrée. La facture est prête.",
     };
-    if (activeAction) toast(messages[activeAction], { description: "Les chiffres du jour ont été mis à jour." });
+    if (!activeAction) return;
+    const result = await saveOperation({
+      type: activeAction,
+      quantity: activeAction === "production" ? Number(quantity) : activeAction === "sortie" ? 150 : activeAction === "retour" ? 150 : undefined,
+      returned: activeAction === "retour" ? Number(retours) : undefined,
+      driver: activeAction === "sortie" || activeAction === "retour" ? "Moussa" : undefined,
+    });
+    if (activeAction === "production") setStock(value => value + Number(quantity || 0));
+    const storageMessage = result.source === "firebase" ? "Enregistré dans Firebase." : "Enregistré sur cet appareil. Firebase sera réessayé automatiquement.";
+    toast(messages[activeAction], { description: storageMessage });
     closeAction();
   };
 
@@ -79,11 +90,11 @@ export default function Home() {
     <main className="simple-main">
       <div className="simple-greeting"><div><p>EAU PURE DE DIALLO · JEUDI 10 SEPTEMBRE 2026</p><h1>Bonjour Mamadou</h1><span>Qu’est-ce qu’on fait aujourd’hui ?</span></div><button className="date-chip"><span className="green-dot" /> Journée en cours <ChevronDown size={14} /></button></div>
 
-      <section className="today-card"><div><span className="today-label"><span className="green-dot" /> RÉSUMÉ D’AUJOURD’HUI</span><h2>Votre activité se passe bien.</h2><p>Vous avez encore <strong>1 085 packs</strong> disponibles.</p></div><div className="today-bottle"><div className="bottle-cap" /><div className="bottle-body"><Droplets size={24} /></div></div></section>
+      <section className="today-card"><div><span className="today-label"><span className="green-dot" /> RÉSUMÉ D’AUJOURD’HUI</span><h2>Votre activité se passe bien.</h2><p>Vous avez encore <strong>{stock.toLocaleString("fr-FR")} packs</strong> disponibles.</p></div><div className="today-bottle"><div className="bottle-cap" /><div className="bottle-body"><Droplets size={24} /></div></div></section>
 
       <section className="simple-section"><div className="simple-section-head"><div><h2>Que voulez-vous faire ?</h2><p>Appuyez sur une action pour commencer</p></div></div><div className="simple-actions-grid">{actions.map(action => <ActionButton key={action.id} action={action} onClick={() => openAction(action.id)} />)}</div></section>
 
-      <section className="numbers-section"><div className="simple-section-head"><div><h2>En un coup d’œil</h2><p>Les chiffres importants du jour</p></div><button className="see-all" onClick={() => toast("Les détails seront disponibles bientôt")}>Voir plus <ArrowRight size={15} /></button></div><div className="numbers-grid"><div className="number-card blue-line"><div className="number-card-top"><Package size={18} /><span>Stock</span></div><strong>1 085</strong><small>packs disponibles</small></div><div className="number-card orange-line"><div className="number-card-top"><Truck size={18} /><span>En tournée</span></div><strong>150</strong><small>packs avec Moussa</small></div><div className="number-card green-line"><div className="number-card-top"><Wallet size={18} /><span>Encaissé</span></div><strong><Money>9 000</Money></strong><small>aujourd’hui</small></div><div className="number-card purple-line"><div className="number-card-top"><CreditCard size={18} /><span>À récupérer</span></div><strong><Money>21 750</Money></strong><small>chez 5 clients</small></div></div></section>
+      <section className="numbers-section"><div className="simple-section-head"><div><h2>En un coup d’œil</h2><p>Les chiffres importants du jour</p></div><button className="see-all" onClick={() => toast("Les détails seront disponibles bientôt")}>Voir plus <ArrowRight size={15} /></button></div><div className="numbers-grid"><div className="number-card blue-line"><div className="number-card-top"><Package size={18} /><span>Stock</span></div><strong>{stock.toLocaleString("fr-FR")}</strong><small>packs disponibles</small></div><div className="number-card orange-line"><div className="number-card-top"><Truck size={18} /><span>En tournée</span></div><strong>150</strong><small>packs avec Moussa</small></div><div className="number-card green-line"><div className="number-card-top"><Wallet size={18} /><span>Encaissé</span></div><strong><Money>9 000</Money></strong><small>aujourd’hui</small></div><div className="number-card purple-line"><div className="number-card-top"><CreditCard size={18} /><span>À récupérer</span></div><strong><Money>21 750</Money></strong><small>chez 5 clients</small></div></div></section>
 
       <section className="bottom-sections"><div className="simple-list-card"><div className="simple-section-head"><div><h2>Dernières opérations</h2><p>Ce qui vient d’être enregistré</p></div><button className="round-arrow" onClick={() => toast("Historique complet bientôt disponible")}><ArrowRight size={16} /></button></div><div className="simple-list">{recent.map(item => { const Icon = item.icon; return <div className="simple-list-item" key={item.text}><div className={`list-icon ${item.tone}`}><Icon size={16} /></div><strong>{item.text}</strong><time>{item.time}</time></div>; })}</div></div><div className="debt-card"><div className="simple-section-head"><div><h2>Qui doit payer ?</h2><p>Les créances à suivre</p></div><div className="debt-total">21 750 F</div></div><div className="debt-main"><div className="debt-avatar">BA</div><div><strong>Boutique Alpha</strong><small>Doit encore 6 250 F</small></div><button onClick={() => toast("Relance préparée pour WhatsApp", { description: "Le message est prêt à être envoyé." })}>Relancer</button></div><button className="full-light-button" onClick={() => toast("La liste complète des clients endettés arrive bientôt")}><Users size={16} /> Voir les 5 clients endettés <ArrowRight size={15} /></button></div></section>
     </main>
