@@ -25,6 +25,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    match /teamMembers/{memberId} {
+      allow read, write: if request.auth != null;
+    }
+
     match /clients/{clientId} {
       allow read, write: if request.auth != null;
     }
