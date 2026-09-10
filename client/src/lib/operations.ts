@@ -62,6 +62,22 @@ export async function saveOperation(operation: Omit<Operation, "createdAt">) {
   }
 }
 
+export async function saveClient(client: Omit<Client, "id">) {
+  try {
+    const reference = await addDoc(collection(db, "clients"), client);
+    return { source: "firebase" as const, item: { ...client, id: reference.id } };
+  } catch (error) {
+    console.warn("Client non enregistré dans Firestore, sauvegarde locale utilisée.", error);
+    if (typeof window !== "undefined") {
+      const existing = JSON.parse(window.localStorage.getItem(LOCAL_CLIENTS_KEY) || "[]") as Client[];
+      const item = { ...client, id: `local-${Date.now()}` };
+      window.localStorage.setItem(LOCAL_CLIENTS_KEY, JSON.stringify([item, ...existing]));
+      return { source: "local" as const, item };
+    }
+    return { source: "local" as const, item: client as Client };
+  }
+}
+
 export async function loadClients() {
   try {
     const snapshot = await getDocs(collection(db, "clients"));

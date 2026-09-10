@@ -1,27 +1,40 @@
 # EAU PURE DE DIALLO — Ma gestion
 
-Maquette simple et mobile-first pour suivre la production et la distribution des packs d’eau.
+Application simple et mobile-first pour suivre la production et la distribution des packs d’eau.
 
-## Ce que contient cette version
+## Version actuelle
 
-- Accueil simple avec le résumé de la journée ;
-- Quatre actions principales : produire, remettre au livreur, enregistrer le retour et enregistrer une vente ;
-- Stock disponible, packs en tournée, encaissements et créances ;
-- Enregistrement des opérations dans **Firebase Firestore** ;
-- Sauvegarde locale automatique si Firestore refuse temporairement l’écriture ;
-- Historique des dernières opérations ;
-- Menu secondaire pour les clients, dettes, factures, dépenses et paramètres ;
-- Logo officiel de **EAU PURE DE DIALLO** intégré.
+- Connexion sécurisée du gérant avec Firebase Authentication ;
+- Clients, dettes et opérations lus depuis Firestore ;
+- Production, sortie, retour et vente enregistrables ;
+- Ajout de clients dans la collection `clients` ;
+- Logo officiel et interface adaptée au téléphone.
 
-## Firebase
+## Première configuration Firebase
 
-Le projet Firebase utilisé est `eau-pure-diallo`. La configuration Web se trouve dans `client/src/lib/firebase.ts`. La configuration Web Firebase peut être présente côté frontend ; la sécurité doit être assurée par les règles Firestore et l’authentification Firebase.
+Dans Firebase Console, ouvrir **Authentication > Sign-in method**, activer **Email/Password**, puis ouvrir **Authentication > Users** et créer le compte du gérant.
 
-Pour permettre l’écriture des opérations, créer la base Firestore dans la console Firebase puis prévoir des règles adaptées. Dans cette maquette, les opérations sont enregistrées dans la collection `operations`.
+Dans Firestore, les règles temporaires de test peuvent être remplacées par :
 
-## Ouvrir le projet sur un ordinateur
+```firestore
+rules_version = '2';
 
-Installer [Node.js](https://nodejs.org/) puis exécuter :
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /operations/{operationId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /clients/{clientId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+Ces règles autorisent uniquement les utilisateurs connectés. Pour une application multi-utilisateurs, il faudra ensuite limiter les accès par identifiant d’entreprise.
+
+## Développement
 
 ```bash
 git clone URL_DU_DEPOT
@@ -30,7 +43,7 @@ pnpm install
 pnpm dev
 ```
 
-Pour vérifier le projet :
+Validation :
 
 ```bash
 pnpm check
@@ -39,12 +52,10 @@ pnpm build
 
 ## Structure principale
 
-- `client/src/pages/Home.tsx` : écran principal et interactions ;
-- `client/src/index.css` : styles et responsive mobile ;
-- `client/src/App.tsx` : point d’entrée React ;
+- `client/src/pages/Home.tsx` : accueil, actions et écrans métier ;
+- `client/src/components/AuthGate.tsx` : protection de l’application ;
+- `client/src/components/LoginScreen.tsx` : connexion du gérant ;
 - `client/src/lib/firebase.ts` : initialisation Firebase ;
-- `client/src/lib/operations.ts` : sauvegarde Firestore avec secours local ;
-- `client/public/eau-pure-de-diallo-logo.png` : logo officiel ;
-- `client/index.html` : titre et configuration de la page.
-
-Cette version est encore une **première version connectée** : les opérations de base sont persistées, tandis que les écrans détaillés clients, factures et rapports restent à développer.
+- `client/src/lib/auth.ts` : Firebase Authentication ;
+- `client/src/lib/operations.ts` : lecture et écriture Firestore ;
+- `client/public/eau-pure-de-diallo-logo.png` : logo officiel.

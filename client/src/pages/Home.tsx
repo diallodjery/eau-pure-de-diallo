@@ -23,7 +23,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { loadClients, loadOperations, saveOperation, type Client, type Operation } from "@/lib/operations";
+import { loadClients, loadOperations, saveClient, saveOperation, type Client, type Operation } from "@/lib/operations";
+import { auth } from "@/lib/auth";
+import { signOut } from "firebase/auth";
 
 type Action = "production" | "sortie" | "retour" | "vente" | null;
 type Page = "home" | "clients" | "dettes" | "operations" | "factures" | "depenses" | "parametres";
@@ -70,6 +72,8 @@ export default function Home() {
   const [quantity, setQuantity] = useState("250");
   const [retours, setRetours] = useState("95");
   const [stock, setStock] = useState(1085);
+  const [clientName, setClientName] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
 
@@ -91,6 +95,15 @@ export default function Home() {
       vente: "Vente enregistrée. La facture est prête.",
     };
     if (!activeAction) return;
+    if (activeAction === "vente" && clientName.trim()) {
+      const result = await saveClient({ name: clientName.trim(), phone: clientPhone.trim(), balance: 0, lastPurchase: "Nouveau client" });
+      setClients((items) => [result.item, ...items]);
+      toast("Client ajouté", { description: result.source === "firebase" ? "Le client est enregistré dans Firebase." : "Le client est enregistré sur cet appareil." });
+      setClientName("");
+      setClientPhone("");
+      closeAction();
+      return;
+    }
     const result = await saveOperation({
       type: activeAction,
       quantity: activeAction === "production" ? Number(quantity) : activeAction === "sortie" ? 150 : activeAction === "retour" ? 150 : undefined,
@@ -104,7 +117,7 @@ export default function Home() {
     closeAction();
   };
 
-  if (page !== "home") return <div className="simple-app"><header className="simple-header"><div className="simple-brand"><img className="simple-logo-image" src="/eau-pure-de-diallo-logo.png" alt="EAU PURE DE DIALLO" /><div><strong>EAU PURE</strong><small>DE DIALLO · MA GESTION</small></div></div><div className="simple-header-actions"><button className="simple-profile" onClick={() => setPage("home")}>M</button></div></header><main className="simple-main"><DetailPage page={page} onBack={() => setPage("home")} onAction={setActiveAction} clients={clients} operations={operations} /></main>{activeAction && <div className="simple-modal-backdrop" onMouseDown={closeAction}><div className="simple-modal" onMouseDown={e => e.stopPropagation()}><div className="simple-modal-head"><div className={`modal-action-icon ${actions.find(a => a.id === activeAction)?.color}`}><Receipt size={21} /></div><button onClick={closeAction}><X size={19} /></button></div><p className="modal-kicker">NOUVELLE OPÉRATION</p><h2>J’ai vendu à un client</h2><p className="modal-help">Remplissez seulement ce qui est nécessaire.</p><label>Nom du client<input placeholder="Ex. Boutique Alpha" /></label><div className="two-inputs"><label>Quantité<input type="number" placeholder="20" /></label><label>Prix du pack<input type="number" placeholder="225 F" /></label></div><div className="simple-modal-actions"><button className="cancel-button" onClick={closeAction}>Annuler</button><button className="save-button" onClick={saveAction}><Check size={17} /> Enregistrer</button></div></div></div>}</div>;
+  if (page !== "home") return <div className="simple-app"><header className="simple-header"><div className="simple-brand"><img className="simple-logo-image" src="/eau-pure-de-diallo-logo.png" alt="EAU PURE DE DIALLO" /><div><strong>EAU PURE</strong><small>DE DIALLO · MA GESTION</small></div></div><div className="simple-header-actions"><button className="simple-profile" onClick={() => setPage("home")}>M</button></div></header><main className="simple-main"><DetailPage page={page} onBack={() => setPage("home")} onAction={setActiveAction} clients={clients} operations={operations} /></main>{activeAction && <div className="simple-modal-backdrop" onMouseDown={closeAction}><div className="simple-modal" onMouseDown={e => e.stopPropagation()}><div className="simple-modal-head"><div className="modal-action-icon purple"><Users size={21} /></div><button onClick={closeAction}><X size={19} /></button></div><p className="modal-kicker">NOUVEAU CLIENT</p><h2>Ajouter un client</h2><p className="modal-help">Notez seulement le nom et le téléphone pour commencer.</p><label>Nom du client<input value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ex. Boutique Alpha" /></label><label>Téléphone<input value={clientPhone} onChange={event => setClientPhone(event.target.value)} placeholder="Ex. 70 00 00 00" /></label><div className="simple-modal-actions"><button className="cancel-button" onClick={closeAction}>Annuler</button><button className="save-button" onClick={saveAction}><Check size={17} /> Enregistrer</button></div></div></div>}</div>;
 
   return <div className="simple-app">
     <header className="simple-header">
@@ -112,7 +125,7 @@ export default function Home() {
       <div className="simple-header-actions"><button className="simple-icon-button" onClick={() => toast("Tout est à jour", { description: "Aucune notification importante." })} aria-label="Notifications"><Bell size={20} /><i /></button><button className="simple-profile" onClick={() => setMenuOpen(true)}>M</button></div>
     </header>
 
-    {menuOpen && <><button className="simple-overlay" onClick={() => setMenuOpen(false)} aria-label="Fermer" /><aside className="simple-menu"><div className="menu-head"><div><span className="menu-kicker">MON ENTREPRISE</span><strong>EAU PURE DE DIALLO</strong><small>Production et distribution d’eau</small></div><button onClick={() => setMenuOpen(false)}><X size={19} /></button></div><div className="menu-links"><button onClick={() => { setPage("clients"); setMenuOpen(false); }}><Users size={19} /> Mes clients <ChevronRight size={16} /></button><button onClick={() => { setPage("dettes"); setMenuOpen(false); }}><CreditCard size={19} /> Dettes clients <span className="menu-count">5</span></button><button onClick={() => { setPage("factures"); setMenuOpen(false); }}><Receipt size={19} /> Mes factures <ChevronRight size={16} /></button><button onClick={() => { setPage("depenses"); setMenuOpen(false); }}><CircleDollarSign size={19} /> Mes dépenses <ChevronRight size={16} /></button><button onClick={() => { setPage("parametres"); setMenuOpen(false); }}><Settings size={19} /> Paramètres <ChevronRight size={16} /></button></div><div className="menu-footer"><div className="menu-user">M</div><div><strong>Mamadou Ndiaye</strong><small>Gérant</small></div></div></aside></>}
+    {menuOpen && <><button className="simple-overlay" onClick={() => setMenuOpen(false)} aria-label="Fermer" /><aside className="simple-menu"><div className="menu-head"><div><span className="menu-kicker">MON ENTREPRISE</span><strong>EAU PURE DE DIALLO</strong><small>Production et distribution d’eau</small></div><button onClick={() => setMenuOpen(false)}><X size={19} /></button></div><div className="menu-links"><button onClick={() => { setPage("clients"); setMenuOpen(false); }}><Users size={19} /> Mes clients <ChevronRight size={16} /></button><button onClick={() => { setPage("dettes"); setMenuOpen(false); }}><CreditCard size={19} /> Dettes clients <span className="menu-count">5</span></button><button onClick={() => { setPage("factures"); setMenuOpen(false); }}><Receipt size={19} /> Mes factures <ChevronRight size={16} /></button><button onClick={() => { setPage("depenses"); setMenuOpen(false); }}><CircleDollarSign size={19} /> Mes dépenses <ChevronRight size={16} /></button><button onClick={() => { setPage("parametres"); setMenuOpen(false); }}><Settings size={19} /> Paramètres <ChevronRight size={16} /></button></div><div className="menu-footer"><div className="menu-user">M</div><div><strong>Mamadou Ndiaye</strong><small>Gérant</small></div><button className="logout-button" onClick={() => void signOut(auth)}>Sortir</button></div></aside></>}
 
     <main className="simple-main">
       <div className="simple-greeting"><div><p>EAU PURE DE DIALLO · JEUDI 10 SEPTEMBRE 2026</p><h1>Bonjour Mamadou</h1><span>Qu’est-ce qu’on fait aujourd’hui ?</span></div><button className="date-chip"><span className="green-dot" /> Journée en cours <ChevronDown size={14} /></button></div>

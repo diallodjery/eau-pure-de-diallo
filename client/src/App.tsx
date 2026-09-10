@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import AuthGate from "./components/AuthGate";
 
 export default function App() {
   return (
@@ -10,7 +11,7 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster position="bottom-right" />
-          <Home />
+          <AuthGate><Home /></AuthGate>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
