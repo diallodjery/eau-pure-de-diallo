@@ -104,6 +104,27 @@ function DetailPage({ page, onBack, onAction, onAddMember, clients, operations, 
     const phone = clients.find((client) => client.name === operation.client)?.phone?.replace(/\D/g, "");
     const message = `Bonjour ${operation.client || ""}, voici votre facture EAU PURE DE DIALLO : ${operation.quantity || 0} packs x ${(operation.unitPrice || 0).toLocaleString("fr-FR")} F = ${(operation.amount || 0).toLocaleString("fr-FR")} F. Payé : ${(operation.paid || 0).toLocaleString("fr-FR")} F. Reste : ${(operation.balanceDue || 0).toLocaleString("fr-FR")} F.`;
     const receipt = document.querySelector(".receipt-preview") as HTMLElement | null;
+    if (receipt && phone && navigator.clipboard && "ClipboardItem" in window) {
+      const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent("Voici votre facture EAU PURE DE DIALLO 👇")}`;
+      const whatsappWindow = window.open("about:blank", "_blank");
+      try {
+        let resolveBlob: (blob: Blob) => void = () => undefined;
+        const blobPromise = new Promise<Blob>((resolve) => { resolveBlob = resolve; });
+        const clipboardWrite = navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+        const canvas = await html2canvas(receipt, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!blob) throw new Error("Impossible de générer l'image du reçu");
+        resolveBlob(blob);
+        await clipboardWrite;
+        if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
+        else window.open(whatsappUrl, "_blank");
+        toast("Image copiée", { description: "WhatsApp est ouvert sur le client. Faites un appui long dans le message, puis choisissez Coller." });
+        return;
+      } catch (error) {
+        whatsappWindow?.close();
+        console.warn("Copie image indisponible, partage natif utilisé.", error);
+      }
+    }
     if (receipt && navigator.share && navigator.canShare) {
       try {
         const canvas = await html2canvas(receipt, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
