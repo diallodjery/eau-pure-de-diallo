@@ -3,6 +3,7 @@ import { db } from "./firebase";
 import { auth } from "./auth";
 
 export type OperationType = "production" | "sortie" | "retour" | "vente";
+export type Expense = { id?: string; category: string; amount: number; note?: string; createdAt: string };
 export type TeamMember = { id?: string; name: string; commissionPerPack: number; phone?: string; active: boolean };
 export type Operation = {
   id?: string; type: OperationType; quantity?: number; returned?: number; driver?: string; client?: string; clientId?: string; amount?: number; paid?: number; balanceDue?: number; unitPrice?: number; invoiceId?: string;
@@ -11,6 +12,7 @@ export type Operation = {
 export type Client = { id?: string; name: string; phone?: string; balance: number; totalPurchased?: number; lastPurchase?: string };
 
 const LOCAL_OPERATIONS_KEY = "eau-pure-de-diallo-operations";
+const LOCAL_EXPENSES_KEY = "eau-pure-de-diallo-expenses";
 const LOCAL_CLIENTS_KEY = "eau-pure-de-diallo-clients";
 const LOCAL_TEAM_KEY = "eau-pure-de-diallo-team";
 
@@ -65,4 +67,23 @@ export async function loadOperations() {
   const local = localItems<Operation>(LOCAL_OPERATIONS_KEY);
   try { const snapshot = await getDocs(userQuery("operations")); const items = snapshot.docs.map((item) => ({ id: item.id, ...item.data(), createdAt: readableDate(item.data().createdAt) })) as Operation[]; return { source: "firebase" as const, items: [...local, ...items] }; }
   catch (error) { console.warn("Lecture opérations Firestore indisponible.", error); return { source: "local" as const, items: local }; }
+}
+
+export async function saveExpense(expense: Omit<Expense, "createdAt">) {
+  const payload: Expense = { ...expense, createdAt: new Date().toISOString() };
+  storeLocal(LOCAL_EXPENSES_KEY, payload);
+  try { const reference = await addDoc(collection(db, "expenses"), { ...payload, ownerId: ownerId(), createdAt: serverTimestamp() }); removeLocalExpense(payload.createdAt); return { source: "firebase" as const, expense: { ...payload, id: reference.id } }; }
+  catch (error) { console.warn("Firestore indisponible, sauvegarde locale de la dépense utilisée.", error); return { source: "local" as const, expense: payload }; }
+}
+
+function removeLocalExpense(createdAt: string) {
+  if (typeof window === "undefined") return;
+  const items = localItems<Expense>(LOCAL_EXPENSES_KEY).filter((item) => item.createdAt !== createdAt);
+  window.localStorage.setItem(`${LOCAL_EXPENSES_KEY}-${ownerId()}`, JSON.stringify(items));
+}
+
+export async function loadExpenses() {
+  const local = localItems<Expense>(LOCAL_EXPENSES_KEY);
+  try { const snapshot = await getDocs(userQuery("expenses")); const items = snapshot.docs.map((item) => ({ id: item.id, ...item.data(), createdAt: readableDate(item.data().createdAt) })) as Expense[]; return { source: "firebase" as const, items: [...local, ...items] }; }
+  catch (error) { console.warn("Lecture des dépenses Firestore indisponible.", error); return { source: "local" as const, items: local }; }
 }
