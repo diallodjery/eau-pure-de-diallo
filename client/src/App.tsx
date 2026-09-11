@@ -4,6 +4,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import AuthGate from "./components/AuthGate";
+import InstallPrompt from "./components/InstallPrompt";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster position="bottom-right" />
+          <InstallPrompt />
           <AuthGate><Home /></AuthGate>
         </TooltipProvider>
       </ThemeProvider>
