@@ -1,4 +1,4 @@
-import { addDoc, collection, getDocs, query, serverTimestamp, where } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "./firebase";
 import { auth } from "./auth";
 
@@ -18,7 +18,7 @@ function ownerId() { return auth.currentUser?.uid || ""; }
 function localItems<T>(key: string) { if (typeof window === "undefined") return [] as T[]; return JSON.parse(window.localStorage.getItem(`${key}-${ownerId()}`) || "[]") as T[]; }
 function storeLocal<T>(key: string, item: T) { if (typeof window === "undefined") return; const items = localItems<T>(key); window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify([item, ...items].slice(0, 100))); }
 function removeLocalOperation(createdAt: string) { if (typeof window === "undefined") return; const items = localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => item.createdAt !== createdAt); window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(items)); }
-function readableDate(value: unknown) { if (typeof value === "string") return value; if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); return "Aujourd’hui"; }
+function readableDate(value: unknown) { if (typeof value === "string") return value; if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate().toISOString(); return new Date().toISOString(); }
 function userQuery(name: string) { return query(collection(db, name), where("ownerId", "==", ownerId())); }
 
 export async function saveOperation(operation: Omit<Operation, "createdAt">) {
@@ -37,6 +37,15 @@ export async function saveClient(client: Omit<Client, "id">) {
   storeLocal(LOCAL_CLIENTS_KEY, localItem);
   try { const reference = await addDoc(collection(db, "clients"), { ...client, ownerId: ownerId() }); return { source: "firebase" as const, item: { ...client, id: reference.id } }; }
   catch (error) { console.warn("Client non enregistré dans Firestore, sauvegarde locale utilisée.", error); const item = { ...client, id: `local-${Date.now()}` }; storeLocal(LOCAL_CLIENTS_KEY, item); return { source: "local" as const, item }; }
+}
+export async function updateClient(id: string, client: Partial<Client>) {
+  if (id.startsWith("local-")) {
+    const items = localItems<Client>(LOCAL_CLIENTS_KEY).map((item) => item.id === id ? { ...item, ...client } : item);
+    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_CLIENTS_KEY}-${ownerId()}`, JSON.stringify(items));
+    return;
+  }
+  try { await updateDoc(doc(db, "clients", id), { ...client, ownerId: ownerId() }); }
+  catch (error) { console.warn("Client non mis à jour dans Firestore.", error); }
 }
 export async function saveTeamMember(member: Omit<TeamMember, "id">) {
   const localItem = { ...member, id: `local-${Date.now()}` };
