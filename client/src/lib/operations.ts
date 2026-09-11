@@ -5,7 +5,7 @@ import { auth } from "./auth";
 export type OperationType = "production" | "sortie" | "retour" | "vente";
 export type TeamMember = { id?: string; name: string; commissionPerPack: number; phone?: string; active: boolean };
 export type Operation = {
-  id?: string; type: OperationType; quantity?: number; returned?: number; driver?: string; client?: string; amount?: number;
+  id?: string; type: OperationType; quantity?: number; returned?: number; driver?: string; client?: string; clientId?: string; amount?: number; paid?: number; balanceDue?: number; unitPrice?: number; invoiceId?: string;
   commissionTotal?: number; workers?: { memberId: string; name: string; rate: number; quantity: number; commission: number }[]; createdAt: string;
 };
 export type Client = { id?: string; name: string; phone?: string; balance: number; totalPurchased?: number; lastPurchase?: string };
@@ -26,6 +26,11 @@ export async function saveOperation(operation: Omit<Operation, "createdAt">) {
   storeLocal(LOCAL_OPERATIONS_KEY, payload);
   try { await addDoc(collection(db, "operations"), { ...payload, ownerId: ownerId(), createdAt: serverTimestamp() }); removeLocalOperation(payload.createdAt); return { source: "firebase" as const, operation: payload }; }
   catch (error) { console.warn("Firestore indisponible, sauvegarde locale utilisée.", error); storeLocal(LOCAL_OPERATIONS_KEY, payload); return { source: "local" as const, operation: payload }; }
+}
+export async function saveInvoice(invoice: { clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt: string }) {
+  const local = { ...invoice, id: `local-invoice-${Date.now()}` };
+  try { const reference = await addDoc(collection(db, "invoices"), { ...invoice, ownerId: ownerId() }); return { source: "firebase" as const, item: { ...invoice, id: reference.id } }; }
+  catch (error) { console.warn("Facture non enregistrée dans Firestore, sauvegarde locale utilisée.", error); storeLocal("eau-pure-de-diallo-invoices", local); return { source: "local" as const, item: local }; }
 }
 export async function saveClient(client: Omit<Client, "id">) {
   const localItem = { ...client, id: `local-${Date.now()}` };
