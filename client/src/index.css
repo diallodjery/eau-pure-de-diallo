@@ -40,3 +40,5 @@
 .login-switch { display:block; width:100%; margin-top:15px; border:0; background:transparent; color:#3974db; font-size:10px; font-weight:750; text-align:center; }.login-switch:hover { text-decoration:underline; }
 
 .worker-picker { margin-top:18px; padding:13px; border:1px solid #e4ebf3; border-radius:10px; background:#fbfcfe; }.worker-picker > strong { display:block; color:#4d607b; font-size:10px; margin-bottom:9px; }.worker-picker > small { color:#9aa8b8; font-size:9px; }.worker-option { display:flex !important; align-items:center; gap:8px; padding:9px 0; margin:0 !important; border-top:1px solid #edf1f5; font-weight:600 !important; }.worker-option input { accent-color:var(--blue); }.worker-option span { flex:1; color:#536680; }.worker-option b { color:#3974db; font-size:9px; white-space:nowrap; }
+
+.empty-inline { padding:18px 0; color:#a1adbb; font-size:10px; text-align:center; }
