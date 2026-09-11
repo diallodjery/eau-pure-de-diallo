@@ -106,7 +106,6 @@ function DetailPage({ page, onBack, onAction, onAddMember, clients, operations, 
     const receipt = document.querySelector(".receipt-preview") as HTMLElement | null;
     if (receipt && phone && navigator.clipboard && "ClipboardItem" in window) {
       const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent("Voici votre facture EAU PURE DE DIALLO 👇")}`;
-      const whatsappWindow = window.open("about:blank", "_blank");
       try {
         let resolveBlob: (blob: Blob) => void = () => undefined;
         const blobPromise = new Promise<Blob>((resolve) => { resolveBlob = resolve; });
@@ -116,12 +115,10 @@ function DetailPage({ page, onBack, onAction, onAddMember, clients, operations, 
         if (!blob) throw new Error("Impossible de générer l'image du reçu");
         resolveBlob(blob);
         await clipboardWrite;
-        if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
-        else window.open(whatsappUrl, "_blank");
+        window.location.href = whatsappUrl;
         toast("Image copiée", { description: "WhatsApp est ouvert sur le client. Faites un appui long dans le message, puis choisissez Coller." });
         return;
       } catch (error) {
-        whatsappWindow?.close();
         console.warn("Copie image indisponible, partage natif utilisé.", error);
       }
     }
