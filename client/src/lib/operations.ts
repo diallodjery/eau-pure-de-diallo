@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "./firebase";
 import { auth } from "./auth";
 
@@ -54,6 +54,15 @@ export async function saveTeamMember(member: Omit<TeamMember, "id">) {
   storeLocal(LOCAL_TEAM_KEY, localItem);
   try { const reference = await addDoc(collection(db, "teamMembers"), { ...member, ownerId: ownerId() }); return { source: "firebase" as const, item: { ...member, id: reference.id } }; }
   catch (error) { console.warn("Membre non enregistré dans Firestore, sauvegarde locale utilisée.", error); const item = { ...member, id: `local-${Date.now()}` }; storeLocal(LOCAL_TEAM_KEY, item); return { source: "local" as const, item }; }
+}
+export async function deleteTeamMember(member: TeamMember) {
+  if (!member.id) return { source: "local" as const };
+  if (member.id.startsWith("local-")) {
+    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_TEAM_KEY}-${ownerId()}`, JSON.stringify(localItems<TeamMember>(LOCAL_TEAM_KEY).filter((item) => item.id !== member.id)));
+    return { source: "local" as const };
+  }
+  await deleteDoc(doc(db, "teamMembers", member.id));
+  return { source: "firebase" as const };
 }
 export async function loadTeamMembers() {
   try { const snapshot = await getDocs(userQuery("teamMembers")); const items = snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as TeamMember[]; return { source: "firebase" as const, items }; }
