@@ -57,6 +57,8 @@ function ActionButton({ action, onClick }: { action: typeof actions[number]; onC
 }
 
 function isInPeriod(value: string, period: "day" | "week" | "month") { const date = new Date(value); if (Number.isNaN(date.getTime())) return false; const now = new Date(); if (period === "day") return date.toDateString() === now.toDateString(); if (period === "month") return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth(); const start = new Date(now); start.setDate(now.getDate() - 6); start.setHours(0, 0, 0, 0); return date >= start; }
+function dateInputValue(date = new Date()) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, "0"); const day = String(date.getDate()).padStart(2, "0"); return `${year}-${month}-${day}`; }
+function isInDateRange(value: string, start: string, end: string) { const date = new Date(value); if (Number.isNaN(date.getTime()) || !start || !end) return false; const startDate = new Date(`${start}T00:00:00`); const endDate = new Date(`${end}T23:59:59.999`); return date >= startDate && date <= endDate; }
 
 function ReceiptPreview({ operation, onClose, shareReceipt }: { operation: Operation; onClose: () => void; shareReceipt: () => void }) {
   const invoiceNumber = `EPD-${operation.createdAt.replace(/\D/g, "").slice(-8)}`;
@@ -160,15 +162,17 @@ export default function Home() {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [reportStart, setReportStart] = useState(dateInputValue());
+  const [reportEnd, setReportEnd] = useState(dateInputValue());
   const sales = operations.filter((operation) => operation.type === "vente");
   const packsOnRoute = operations.filter((operation) => operation.type === "sortie").reduce((total, operation) => total + (operation.quantity || 0), 0) - operations.filter((operation) => operation.type === "retour").reduce((total, operation) => total + (operation.returned || 0), 0);
   const collectedToday = sales.reduce((total, operation) => total + (operation.paid || 0), 0);
   const debtTotal = clients.reduce((total, client) => total + (client.balance || 0), 0);
-  const todayRevenue = sales.filter((operation) => isInPeriod(operation.createdAt, "day")).reduce((total, operation) => total + (operation.amount || 0), 0);
-  const todayCommissions = operations.filter((operation) => isInPeriod(operation.createdAt, "day")).reduce((total, operation) => total + (operation.commissionTotal || 0), 0);
-  const todayExpenses = expenses.filter((expense) => isInPeriod(expense.createdAt, "day")).reduce((total, expense) => total + expense.amount, 0);
-  const todayOutflows = todayCommissions + todayExpenses;
-  const todayResult = todayRevenue - todayOutflows;
+  const reportRevenue = sales.filter((operation) => isInDateRange(operation.createdAt, reportStart, reportEnd)).reduce((total, operation) => total + (operation.amount || 0), 0);
+  const reportCommissions = operations.filter((operation) => isInDateRange(operation.createdAt, reportStart, reportEnd)).reduce((total, operation) => total + (operation.commissionTotal || 0), 0);
+  const reportExpenses = expenses.filter((expense) => isInDateRange(expense.createdAt, reportStart, reportEnd)).reduce((total, expense) => total + expense.amount, 0);
+  const reportOutflows = reportCommissions + reportExpenses;
+  const reportResult = reportRevenue - reportOutflows;
   const todayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()).toUpperCase();
   const clientsWithDebt = clients.filter((client) => (client.balance || 0) > 0);
 
@@ -273,7 +277,7 @@ export default function Home() {
     <main className="simple-main">
       <div className="simple-greeting"><div><p>EAU PURE DE DIALLO · {todayLabel}</p><h1>Bonjour {managerDisplayName.split(" ")[0]}</h1><span>Qu’est-ce qu’on fait aujourd’hui ?</span></div><button className="date-chip"><span className="green-dot" /> Journée en cours <ChevronDown size={14} /></button></div>
 
-      <section className="today-card financial-summary"><div className="financial-summary-head"><span className="today-label"><span className="green-dot" /> RÉSUMÉ FINANCIER D’AUJOURD’HUI</span><small>{stock.toLocaleString("fr-FR")} packs en stock · {packsOnRoute.toLocaleString("fr-FR")} en tournée</small></div><div className="financial-summary-grid"><div><span>Entrées</span><strong>{todayRevenue.toLocaleString("fr-FR")} F</strong><small>ventes du jour</small></div><div><span>Sorties</span><strong>{todayOutflows.toLocaleString("fr-FR")} F</strong><small>dépenses + commissions</small></div><div><span>Dettes</span><strong>{debtTotal.toLocaleString("fr-FR")} F</strong><small>à récupérer</small></div><div className={todayResult >= 0 ? "result-positive" : "result-negative"}><span>Résultat</span><strong>{todayResult.toLocaleString("fr-FR")} F</strong><small>entrées − sorties</small></div></div></section>
+      <section className="today-card financial-summary"><div className="financial-summary-head"><div><span className="today-label"><span className="green-dot" /> RÉSULTAT SUR LA PÉRIODE</span><small>{stock.toLocaleString("fr-FR")} packs en stock · {packsOnRoute.toLocaleString("fr-FR")} en tournée</small></div><div className="financial-date-filters"><label>Du<input type="date" value={reportStart} onChange={(event) => { const value = event.target.value; setReportStart(value); if (reportEnd < value) setReportEnd(value); }} /></label><label>Au<input type="date" value={reportEnd} min={reportStart} onChange={(event) => setReportEnd(event.target.value)} /></label></div></div><div className="financial-summary-grid"><div><span>Entrées</span><strong>{reportRevenue.toLocaleString("fr-FR")} F</strong><small>ventes de la période</small></div><div><span>Sorties</span><strong>{reportOutflows.toLocaleString("fr-FR")} F</strong><small>dépenses + commissions</small></div><div><span>Dettes</span><strong>{debtTotal.toLocaleString("fr-FR")} F</strong><small>à récupérer actuellement</small></div><div className={reportResult >= 0 ? "result-positive" : "result-negative"}><span>Résultat</span><strong>{reportResult.toLocaleString("fr-FR")} F</strong><small>entrées − sorties</small></div></div></section>
 
       <section className="simple-section"><div className="simple-section-head"><div><h2>Que voulez-vous faire ?</h2><p>Appuyez sur une action pour commencer</p></div></div><div className="simple-actions-grid">{actions.map(action => <ActionButton key={action.id} action={action} onClick={() => openAction(action.id)} />)}</div></section>
 
