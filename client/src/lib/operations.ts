@@ -26,14 +26,34 @@ function userQuery(name: string) { return query(collection(db, name), where("own
 export async function saveOperation(operation: Omit<Operation, "createdAt">) {
   const payload: Operation = { ...operation, createdAt: new Date().toISOString() };
   storeLocal(LOCAL_OPERATIONS_KEY, payload);
-  try { await addDoc(collection(db, "operations"), { ...payload, ownerId: ownerId(), createdAt: serverTimestamp() }); removeLocalOperation(payload.createdAt); return { source: "firebase" as const, operation: payload }; }
+  try { const reference = await addDoc(collection(db, "operations"), { ...payload, ownerId: ownerId(), createdAt: serverTimestamp() }); removeLocalOperation(payload.createdAt); return { source: "firebase" as const, operation: { ...payload, id: reference.id } }; }
   catch (error) { console.warn("Firestore indisponible, sauvegarde locale utilisée.", error); storeLocal(LOCAL_OPERATIONS_KEY, payload); return { source: "local" as const, operation: payload }; }
 }
-export async function saveInvoice(invoice: { clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt: string }) {
+export async function updateOperation(operation: Operation) {
+  if (!operation.id) return;
+  if (operation.id.startsWith("local-")) {
+    const items = localItems<Operation>(LOCAL_OPERATIONS_KEY).map((item) => item.id === operation.id ? operation : item);
+    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(items));
+    return;
+  }
+  const { id, ...data } = operation;
+  await updateDoc(doc(db, "operations", id), { ...data, ownerId: ownerId() });
+}
+
+export async function saveInvoice(invoice: { operationId?: string; clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt: string }) {
   const local = { ...invoice, id: `local-invoice-${Date.now()}` };
   try { const reference = await addDoc(collection(db, "invoices"), { ...invoice, ownerId: ownerId() }); return { source: "firebase" as const, item: { ...invoice, id: reference.id } }; }
   catch (error) { console.warn("Facture non enregistrée dans Firestore, sauvegarde locale utilisée.", error); storeLocal("eau-pure-de-diallo-invoices", local); return { source: "local" as const, item: local }; }
 }
+export async function updateInvoice(invoice: { operationId?: string; clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt?: string }) {
+  if (!invoice.operationId) return;
+  try {
+    const snapshot = await getDocs(userQuery("invoices"));
+    const existing = snapshot.docs.find((item) => item.data().operationId === invoice.operationId);
+    if (existing) await updateDoc(existing.ref, { ...invoice, ownerId: ownerId() });
+  } catch (error) { console.warn("Facture détaillée non mise à jour, l’opération reste la source principale.", error); }
+}
+
 export async function saveClient(client: Omit<Client, "id">) {
   const localItem = { ...client, id: `local-${Date.now()}` };
   storeLocal(LOCAL_CLIENTS_KEY, localItem);
