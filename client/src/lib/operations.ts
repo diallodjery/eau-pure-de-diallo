@@ -29,14 +29,14 @@ export async function saveOperation(operation: Omit<Operation, "createdAt">) {
   catch (error) { console.warn("Firestore indisponible, sauvegarde locale utilisée.", error); storeLocal(LOCAL_OPERATIONS_KEY, payload); return { source: "local" as const, operation: payload }; }
 }
 export async function updateOperation(operation: Operation) {
-  if (!operation.id) return;
-  if (operation.id.startsWith("local-")) {
-    const items = localItems<Operation>(LOCAL_OPERATIONS_KEY).map((item) => item.id === operation.id ? operation : item);
-    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(items));
-    return;
-  }
   const { id, ...data } = operation;
-  await updateDoc(doc(db, "operations", id), { ...data, ownerId: ownerId() });
+  if (typeof window !== "undefined") {
+    const items = localItems<Operation>(LOCAL_OPERATIONS_KEY).map((item) => (item.id === operation.id || (!operation.id && item.createdAt === operation.createdAt)) ? operation : item);
+    window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(items));
+  }
+  if (!id || id.startsWith("local-")) return { source: "local" as const, operation };
+  try { await updateDoc(doc(db, "operations", id), { ...data, ownerId: ownerId() }); return { source: "firebase" as const, operation }; }
+  catch (error) { console.warn("Opération non mise à jour dans Firestore.", error); return { source: "local" as const, operation }; }
 }
 export async function deleteOperation(operation: Operation) {
   const matches = (item: Operation) => operation.id ? item.id === operation.id : item.createdAt === operation.createdAt && item.type === operation.type && item.client === operation.client;
@@ -95,17 +95,6 @@ export async function updateClient(id: string, client: Partial<Client>) {
   }
   try { await updateDoc(doc(db, "clients", id), { ...client, ownerId: ownerId() }); }
   catch (error) { console.warn("Client non mis à jour dans Firestore.", error); }
-}
-export async function updateOperation(operation: Operation) {
-  const patch = { ...operation };
-  if (typeof window !== "undefined") {
-    const items = localItems<Operation>(LOCAL_OPERATIONS_KEY);
-    const updated = items.map((item) => (item.id === operation.id || (!operation.id && item.createdAt === operation.createdAt)) ? patch : item);
-    window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(updated));
-  }
-  if (!operation.id || operation.id.startsWith("local-")) return { source: "local" as const, operation: patch };
-  try { await updateDoc(doc(db, "operations", operation.id), { ...patch, ownerId: ownerId() }); return { source: "firebase" as const, operation: patch }; }
-  catch (error) { console.warn("Opération non mise à jour dans Firestore.", error); return { source: "local" as const, operation: patch }; }
 }
 export async function saveTeamMember(member: Omit<TeamMember, "id">) {
   const localItem = { ...member, id: `local-${Date.now()}` };
