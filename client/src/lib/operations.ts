@@ -39,6 +39,14 @@ export async function updateOperation(operation: Operation) {
   const { id, ...data } = operation;
   await updateDoc(doc(db, "operations", id), { ...data, ownerId: ownerId() });
 }
+export async function deleteOperation(operation: Operation) {
+  if (!operation.id) return;
+  if (operation.id.startsWith("local-")) {
+    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => item.id !== operation.id)));
+    return;
+  }
+  await deleteDoc(doc(db, "operations", operation.id));
+}
 
 export async function saveInvoice(invoice: { operationId?: string; clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt: string }) {
   const local = { ...invoice, id: `local-invoice-${Date.now()}` };
@@ -52,6 +60,17 @@ export async function updateInvoice(invoice: { operationId?: string; clientId?: 
     const existing = snapshot.docs.find((item) => item.data().operationId === invoice.operationId);
     if (existing) await updateDoc(existing.ref, { ...invoice, ownerId: ownerId() });
   } catch (error) { console.warn("Facture détaillée non mise à jour, l’opération reste la source principale.", error); }
+}
+export async function deleteInvoice(operationId?: string) {
+  if (!operationId) return;
+  try {
+    const snapshot = await getDocs(userQuery("invoices"));
+    await Promise.all(snapshot.docs.filter((item) => item.data().operationId === operationId).map((item) => deleteDoc(item.ref)));
+  } catch (error) { console.warn("Facture détaillée non supprimée, l’opération reste supprimée.", error); }
+  if (typeof window !== "undefined") {
+    const key = "eau-pure-de-diallo-invoices";
+    window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify(localItems<{ operationId?: string }>(key).filter((item) => item.operationId !== operationId)));
+  }
 }
 
 export async function saveClient(client: Omit<Client, "id">) {
