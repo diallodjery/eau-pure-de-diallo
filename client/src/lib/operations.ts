@@ -96,6 +96,17 @@ export async function updateClient(id: string, client: Partial<Client>) {
   try { await updateDoc(doc(db, "clients", id), { ...client, ownerId: ownerId() }); }
   catch (error) { console.warn("Client non mis à jour dans Firestore.", error); }
 }
+export async function updateOperation(operation: Operation) {
+  const patch = { ...operation };
+  if (typeof window !== "undefined") {
+    const items = localItems<Operation>(LOCAL_OPERATIONS_KEY);
+    const updated = items.map((item) => (item.id === operation.id || (!operation.id && item.createdAt === operation.createdAt)) ? patch : item);
+    window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(updated));
+  }
+  if (!operation.id || operation.id.startsWith("local-")) return { source: "local" as const, operation: patch };
+  try { await updateDoc(doc(db, "operations", operation.id), { ...patch, ownerId: ownerId() }); return { source: "firebase" as const, operation: patch }; }
+  catch (error) { console.warn("Opération non mise à jour dans Firestore.", error); return { source: "local" as const, operation: patch }; }
+}
 export async function saveTeamMember(member: Omit<TeamMember, "id">) {
   const localItem = { ...member, id: `local-${Date.now()}` };
   storeLocal(LOCAL_TEAM_KEY, localItem);
