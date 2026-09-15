@@ -220,14 +220,14 @@ export default function Home() {
     if (!window.confirm(`Supprimer la facture de ${operation.client || "ce client"} ? Cette action retirera aussi la vente et mettra à jour sa dette.`)) return;
     try {
       await deleteOperation(operation);
-      await deleteInvoice(operation.id);
+      await deleteInvoice(operation.id, operation);
       const client = clients.find((item) => item.id === operation.clientId || item.name === operation.client);
       if (client?.id) {
         const updatedClient = { ...client, balance: Math.max(0, (client.balance || 0) - (operation.balanceDue || 0)), totalPurchased: Math.max(0, (client.totalPurchased || 0) - (operation.amount || 0)) };
         await updateClient(client.id, updatedClient);
         setClients((items) => items.map((item) => item.id === client.id ? updatedClient : item));
       }
-      setOperations((items) => items.filter((item) => item.id !== operation.id));
+      setOperations((items) => items.filter((item) => operation.id ? item.id !== operation.id : !(item.createdAt === operation.createdAt && item.type === operation.type && item.client === operation.client)));
       toast("Facture supprimée", { description: "La vente et la dette du client ont été mises à jour." });
     } catch (error) { console.warn("Facture non supprimée.", error); toast("Suppression impossible", { description: "Vérifiez la connexion puis réessayez." }); }
   };

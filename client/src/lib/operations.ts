@@ -40,9 +40,18 @@ export async function updateOperation(operation: Operation) {
   await updateDoc(doc(db, "operations", id), { ...data, ownerId: ownerId() });
 }
 export async function deleteOperation(operation: Operation) {
-  if (!operation.id) return;
+  const matches = (item: Operation) => operation.id ? item.id === operation.id : item.createdAt === operation.createdAt && item.type === operation.type && item.client === operation.client;
+  if (!operation.id) {
+    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => !matches(item))));
+    try {
+      const snapshot = await getDocs(userQuery("operations"));
+      const existing = snapshot.docs.find((item) => { const data = item.data(); return data.type === operation.type && data.client === operation.client && data.amount === operation.amount && data.quantity === operation.quantity; });
+      if (existing) await deleteDoc(existing.ref);
+    } catch (error) { console.warn("Ancienne opération non supprimée de Firestore.", error); }
+    return;
+  }
   if (operation.id.startsWith("local-")) {
-    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => item.id !== operation.id)));
+    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => !matches(item))));
     return;
   }
   await deleteDoc(doc(db, "operations", operation.id));
@@ -61,15 +70,15 @@ export async function updateInvoice(invoice: { operationId?: string; clientId?: 
     if (existing) await updateDoc(existing.ref, { ...invoice, ownerId: ownerId() });
   } catch (error) { console.warn("Facture détaillée non mise à jour, l’opération reste la source principale.", error); }
 }
-export async function deleteInvoice(operationId?: string) {
-  if (!operationId) return;
+export async function deleteInvoice(operationId?: string, operation?: Operation) {
+  const sameInvoice = (data: { operationId?: string; client?: string; quantity?: number; total?: number }) => operationId ? data.operationId === operationId : !!operation && data.client === operation.client && data.quantity === operation.quantity && data.total === operation.amount;
   try {
     const snapshot = await getDocs(userQuery("invoices"));
-    await Promise.all(snapshot.docs.filter((item) => item.data().operationId === operationId).map((item) => deleteDoc(item.ref)));
+    await Promise.all(snapshot.docs.filter((item) => sameInvoice(item.data())).map((item) => deleteDoc(item.ref)));
   } catch (error) { console.warn("Facture détaillée non supprimée, l’opération reste supprimée.", error); }
   if (typeof window !== "undefined") {
     const key = "eau-pure-de-diallo-invoices";
-    window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify(localItems<{ operationId?: string }>(key).filter((item) => item.operationId !== operationId)));
+    window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify(localItems<{ operationId?: string; client?: string; quantity?: number; total?: number }>(key).filter((item) => !sameInvoice(item))));
   }
 }
 
