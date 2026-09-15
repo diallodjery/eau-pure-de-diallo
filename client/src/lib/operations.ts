@@ -25,7 +25,6 @@ function userQuery(name: string) { return query(collection(db, name), where("own
 
 export async function saveOperation(operation: Omit<Operation, "createdAt">) {
   const payload: Operation = { ...operation, createdAt: new Date().toISOString() };
-  storeLocal(LOCAL_OPERATIONS_KEY, payload);
   try { const reference = await addDoc(collection(db, "operations"), { ...payload, ownerId: ownerId(), createdAt: serverTimestamp() }); removeLocalOperation(payload.createdAt); return { source: "firebase" as const, operation: { ...payload, id: reference.id } }; }
   catch (error) { console.warn("Firestore indisponible, sauvegarde locale utilisée.", error); storeLocal(LOCAL_OPERATIONS_KEY, payload); return { source: "local" as const, operation: payload }; }
 }
