@@ -3,10 +3,11 @@ import { db } from "./firebase";
 import { auth } from "./auth";
 
 export type OperationType = "production" | "sortie" | "retour" | "vente";
+export type SaleOrigin = "depot" | "tournee";
 export type Expense = { id?: string; category: string; amount: number; note?: string; createdAt: string };
 export type TeamMember = { id?: string; name: string; commissionPerPack: number; phone?: string; active: boolean };
 export type Operation = {
-  id?: string; type: OperationType; quantity?: number; returned?: number; driver?: string; client?: string; clientId?: string; amount?: number; paid?: number; balanceDue?: number; unitPrice?: number; invoiceId?: string;
+  id?: string; type: OperationType; quantity?: number; returned?: number; driver?: string; client?: string; clientId?: string; amount?: number; paid?: number; balanceDue?: number; unitPrice?: number; invoiceId?: string; saleOrigin?: SaleOrigin; tourId?: string;
   commissionTotal?: number; workers?: { memberId: string; name: string; rate: number; quantity: number; commission: number }[]; createdAt: string;
 };
 export type Client = { id?: string; name: string; phone?: string; balance: number; totalPurchased?: number; lastPurchase?: string };
