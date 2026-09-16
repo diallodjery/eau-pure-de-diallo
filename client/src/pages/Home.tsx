@@ -39,6 +39,9 @@ const actions = [
   { id: "vente" as const, label: "J’ai vendu", sub: "Enregistrer un client", icon: Receipt, color: "purple" },
 ];
 
+function localDateInput() { return new Date().toISOString().slice(0, 10); }
+function inDateRange(value: string, start: string, end: string) { const date = new Date(value).getTime(); return date >= new Date(`${start}T00:00:00`).getTime() && date <= new Date(`${end}T23:59:59`).getTime(); }
+
 const recent = [
   { icon: Droplets, tone: "blue", text: "250 packs produits", time: "08:42" },
   { icon: Truck, tone: "orange", text: "150 packs remis à Moussa", time: "09:18" },
@@ -107,10 +110,16 @@ export default function Home() {
   const [clients, setClients] = useState<Client[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [reportStart, setReportStart] = useState(localDateInput());
+  const [reportEnd, setReportEnd] = useState(localDateInput());
   const sales = operations.filter((operation) => operation.type === "vente");
   const packsOnRoute = operations.filter((operation) => operation.type === "sortie").reduce((total, operation) => total + (operation.quantity || 0), 0) - operations.filter((operation) => operation.type === "retour").reduce((total, operation) => total + (operation.returned || 0), 0);
   const collectedToday = sales.reduce((total, operation) => total + (operation.paid || 0), 0);
   const debtTotal = clients.reduce((total, client) => total + (client.balance || 0), 0);
+  const reportRevenue = sales.filter((operation) => inDateRange(operation.createdAt, reportStart, reportEnd)).reduce((total, operation) => total + (operation.amount || 0), 0);
+  const reportCommissions = operations.filter((operation) => inDateRange(operation.createdAt, reportStart, reportEnd)).reduce((total, operation) => total + (operation.commissionTotal || 0), 0);
+  const reportResult = reportRevenue - reportCommissions;
+  const todayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()).toUpperCase();
 
   useEffect(() => {
     void Promise.all([loadClients(), loadOperations(), loadTeamMembers()]).then(([clientResult, operationResult, teamResult]) => {
@@ -257,9 +266,9 @@ export default function Home() {
     {menuOpen && <><button className="simple-overlay" onClick={() => setMenuOpen(false)} aria-label="Fermer" /><aside className="simple-menu"><div className="menu-head"><div><span className="menu-kicker">MON ENTREPRISE</span><strong>EAU PURE DE DIALLO</strong><small>Production et distribution d’eau</small></div><button onClick={() => setMenuOpen(false)}><X size={19} /></button></div><div className="menu-links"><button onClick={() => { setPage("clients"); setMenuOpen(false); }}><Users size={19} /> Mes clients <ChevronRight size={16} /></button><button onClick={() => { setPage("dettes"); setMenuOpen(false); }}><CreditCard size={19} /> Dettes clients <span className="menu-count">5</span></button><button onClick={() => { setPage("team"); setMenuOpen(false); }}><Users size={19} /> Mon équipe <ChevronRight size={16} /></button><button onClick={() => { setPage("factures"); setMenuOpen(false); }}><Receipt size={19} /> Mes factures <ChevronRight size={16} /></button><button onClick={() => { setPage("depenses"); setMenuOpen(false); }}><CircleDollarSign size={19} /> Mes dépenses <ChevronRight size={16} /></button><button onClick={() => { setPage("parametres"); setMenuOpen(false); }}><Settings size={19} /> Paramètres <ChevronRight size={16} /></button></div><div className="menu-footer"><div className="menu-user">{managerDisplayName.slice(0, 1).toUpperCase()}</div><div><strong>{managerDisplayName}</strong><small>Gérant</small></div><button className="logout-button" onClick={() => void signOut(auth)}>Sortir</button></div></aside></>}
 
     <main className="simple-main">
-      <div className="simple-greeting"><div><p>EAU PURE DE DIALLO · JEUDI 10 SEPTEMBRE 2026</p><h1>Bonjour {managerDisplayName.split(" ")[0]}</h1><span>Qu’est-ce qu’on fait aujourd’hui ?</span></div><button className="date-chip"><span className="green-dot" /> Journée en cours <ChevronDown size={14} /></button></div>
+      <div className="simple-greeting"><div><p>EAU PURE DE DIALLO · {todayLabel}</p><h1>Bonjour {managerDisplayName.split(" ")[0]}</h1><span>Qu’est-ce qu’on fait aujourd’hui ?</span></div><button className="date-chip"><span className="green-dot" /> Journée en cours <ChevronDown size={14} /></button></div>
 
-      <section className="today-card"><div><span className="today-label"><span className="green-dot" /> RÉSUMÉ D’AUJOURD’HUI</span><h2>Votre activité se passe bien.</h2><p>Vous avez encore <strong>{stock.toLocaleString("fr-FR")} packs</strong> disponibles.</p></div><div className="today-bottle"><div className="bottle-cap" /><div className="bottle-body"><Droplets size={24} /></div></div></section>
+      <section className="today-card financial-summary"><div className="financial-summary-head"><div><span className="today-label"><span className="green-dot" /> RÉSULTAT SUR LA PÉRIODE</span><small>{stock.toLocaleString("fr-FR")} packs en stock · {packsOnRoute.toLocaleString("fr-FR")} en tournée</small></div><div className="financial-date-filters"><label>Du<input type="date" value={reportStart} onChange={(event) => { const value = event.target.value; setReportStart(value); if (reportEnd < value) setReportEnd(value); }} /></label><label>Au<input type="date" value={reportEnd} min={reportStart} onChange={(event) => setReportEnd(event.target.value)} /></label></div></div><div className="financial-summary-grid"><div><span>Entrées</span><strong>{reportRevenue.toLocaleString("fr-FR")} F</strong><small>ventes de la période</small></div><div><span>Sorties</span><strong>{reportCommissions.toLocaleString("fr-FR")} F</strong><small>commissions de production</small></div><div><span>Stock</span><strong>{stock.toLocaleString("fr-FR")}</strong><small>packs disponibles</small></div><div className={reportResult >= 0 ? "result-positive" : "result-negative"}><span>Résultat</span><strong>{reportResult.toLocaleString("fr-FR")} F</strong><small>entrées − sorties</small></div></div></section>
 
       <section className="simple-section"><div className="simple-section-head"><div><h2>Que voulez-vous faire ?</h2><p>Appuyez sur une action pour commencer</p></div></div><div className="simple-actions-grid">{actions.map(action => <ActionButton key={action.id} action={action} onClick={() => openAction(action.id)} />)}</div></section>
 
