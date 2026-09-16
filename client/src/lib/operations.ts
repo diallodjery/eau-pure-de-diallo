@@ -61,13 +61,18 @@ export async function saveInvoice(invoice: { operationId?: string; clientId?: st
   try { const reference = await addDoc(collection(db, "invoices"), { ...invoice, ownerId: ownerId() }); return { source: "firebase" as const, item: { ...invoice, id: reference.id } }; }
   catch (error) { console.warn("Facture non enregistrée dans Firestore, sauvegarde locale utilisée.", error); storeLocal("eau-pure-de-diallo-invoices", local); return { source: "local" as const, item: local }; }
 }
-export async function updateInvoice(invoice: { operationId?: string; clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt?: string }) {
-  if (!invoice.operationId) return;
+export async function updateInvoice(invoice: { operationId?: string; clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt?: string }, previous?: Operation) {
+  const matches = (data: { operationId?: string; client?: string; quantity?: number; total?: number }) => invoice.operationId ? data.operationId === invoice.operationId : !!previous && data.client === previous.client && data.quantity === previous.quantity && data.total === previous.amount;
   try {
     const snapshot = await getDocs(userQuery("invoices"));
-    const existing = snapshot.docs.find((item) => item.data().operationId === invoice.operationId);
+    const existing = snapshot.docs.find((item) => matches(item.data()));
     if (existing) await updateDoc(existing.ref, { ...invoice, ownerId: ownerId() });
   } catch (error) { console.warn("Facture détaillée non mise à jour, l’opération reste la source principale.", error); }
+  if (typeof window !== "undefined") {
+    const key = "eau-pure-de-diallo-invoices";
+    const items = localItems<typeof invoice>(key).map((item) => matches(item) ? { ...item, ...invoice } : item);
+    window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify(items));
+  }
 }
 export async function deleteInvoice(operationId?: string, operation?: Operation) {
   const sameInvoice = (data: { operationId?: string; client?: string; quantity?: number; total?: number }) => operationId ? data.operationId === operationId : !!operation && data.client === operation.client && data.quantity === operation.quantity && data.total === operation.amount;
