@@ -40,21 +40,22 @@ export async function updateOperation(operation: Operation) {
   catch (error) { console.warn("Opération non mise à jour dans Firestore.", error); return { source: "local" as const, operation }; }
 }
 export async function deleteOperation(operation: Operation) {
-  const matches = (item: Operation) => operation.id ? item.id === operation.id : item.createdAt === operation.createdAt && item.type === operation.type && item.client === operation.client;
-  if (!operation.id) {
-    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => !matches(item))));
-    try {
-      const snapshot = await getDocs(userQuery("operations"));
-      const existing = snapshot.docs.find((item) => { const data = item.data(); return data.type === operation.type && data.client === operation.client && data.amount === operation.amount && data.quantity === operation.quantity; });
-      if (existing) await deleteDoc(existing.ref);
-    } catch (error) { console.warn("Ancienne opération non supprimée de Firestore.", error); }
-    return;
-  }
-  if (operation.id.startsWith("local-")) {
-    if (typeof window !== "undefined") window.localStorage.setItem(`${LOCAL_OPERATIONS_KEY}-${ownerId()}`, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => !matches(item))));
+  // Une opération sans identifiant Firebase est uniquement locale. On ne tente
+  // jamais de la retrouver par quantité/nom, car cela pourrait supprimer une
+  // autre opération identique.
+  if (!operation.id || operation.id.startsWith("local-")) {
+    if (typeof window !== "undefined") {
+      const key = `${LOCAL_OPERATIONS_KEY}-${ownerId()}`;
+      const items = localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => operation.id ? item.id !== operation.id : item.createdAt !== operation.createdAt);
+      window.localStorage.setItem(key, JSON.stringify(items));
+    }
     return;
   }
   await deleteDoc(doc(db, "operations", operation.id));
+  if (typeof window !== "undefined") {
+    const key = `${LOCAL_OPERATIONS_KEY}-${ownerId()}`;
+    window.localStorage.setItem(key, JSON.stringify(localItems<Operation>(LOCAL_OPERATIONS_KEY).filter((item) => item.id !== operation.id)));
+  }
 }
 
 export async function saveInvoice(invoice: { operationId?: string; clientId?: string; client: string; quantity: number; unitPrice: number; total: number; paid: number; balanceDue: number; createdAt: string }) {
@@ -79,11 +80,20 @@ export async function deleteInvoice(operationId?: string, operation?: Operation)
   const sameInvoice = (data: { operationId?: string; client?: string; quantity?: number; total?: number }) => operationId ? data.operationId === operationId : !!operation && data.client === operation.client && data.quantity === operation.quantity && data.total === operation.amount;
   try {
     const snapshot = await getDocs(userQuery("invoices"));
-    await Promise.all(snapshot.docs.filter((item) => sameInvoice(item.data())).map((item) => deleteDoc(item.ref)));
+    const matching = snapshot.docs.filter((item) => sameInvoice(item.data()));
+    // Un seul reçu est lié à une vente : ne jamais supprimer toutes les factures
+    // qui auraient par hasard les mêmes valeurs.
+    if (matching[0]) await deleteDoc(matching[0].ref);
   } catch (error) { console.warn("Facture détaillée non supprimée, l’opération reste supprimée.", error); }
   if (typeof window !== "undefined") {
     const key = "eau-pure-de-diallo-invoices";
-    window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify(localItems<{ operationId?: string; client?: string; quantity?: number; total?: number }>(key).filter((item) => !sameInvoice(item))));
+    const items = localItems<{ id?: string; operationId?: string; client?: string; quantity?: number; total?: number }>(key);
+    let removed = false;
+    window.localStorage.setItem(`${key}-${ownerId()}`, JSON.stringify(items.filter((item) => {
+      if (removed || !sameInvoice(item)) return true;
+      removed = true;
+      return false;
+    })));
   }
 }
 
