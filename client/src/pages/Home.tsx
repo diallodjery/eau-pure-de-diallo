@@ -107,6 +107,7 @@ export default function Home() {
   const [salePaid, setSalePaid] = useState("0");
   const [saleOrigin, setSaleOrigin] = useState<"depot" | "tournee">("depot");
   const [selectedTourId, setSelectedTourId] = useState("");
+  const [selectedReturnTourId, setSelectedReturnTourId] = useState("");
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [memberName, setMemberName] = useState("");
   const [memberRate, setMemberRate] = useState("10");
@@ -125,7 +126,10 @@ export default function Home() {
   const activeTours = operations.filter((operation) => operation.type === "sortie" && operation.tourId && !operations.some((item) => item.type === "retour" && item.tourId === operation.tourId));
   const depotSales = sales.filter((sale) => (sale.saleOrigin || "depot") === "depot");
   const tourSales = sales.filter((sale) => sale.saleOrigin === "tournee");
-  const packsOnRoute = operations.filter((operation) => operation.type === "sortie").reduce((total, operation) => total + (operation.quantity || 0), 0) - operations.filter((operation) => operation.type === "retour").reduce((total, operation) => total + (operation.returned || 0), 0);
+  const packsSoldOnTour = (tourId?: string) => sales.filter((sale) => sale.saleOrigin === "tournee" && sale.tourId === tourId).reduce((total, sale) => total + (sale.quantity || 0), 0);
+  const packsOnRoute = activeTours.reduce((total, tour) => total + Math.max(0, (tour.quantity || 0) - packsSoldOnTour(tour.tourId)), 0);
+  const selectedReturnTour = activeTours.find((tour) => tour.tourId === selectedReturnTourId);
+  const selectedReturnExpected = selectedReturnTour ? Math.max(0, (selectedReturnTour.quantity || 0) - packsSoldOnTour(selectedReturnTour.tourId)) : 0;
   const collectedToday = sales.reduce((total, operation) => total + (operation.paid || 0), 0);
   const debtTotal = clients.reduce((total, client) => total + (client.balance || 0), 0);
   const reportRevenue = sales.filter((operation) => inDateRange(operation.createdAt, reportStart, reportEnd)).reduce((total, operation) => total + (operation.amount || 0), 0);
@@ -145,7 +149,11 @@ export default function Home() {
     });
   }, []);
 
-  const openAction = (action: Action) => setActiveAction(action);
+  const openAction = (action: Action) => {
+    if (action === "vente" && !selectedTourId) setSelectedTourId(activeTours[0]?.tourId || "");
+    if (action === "retour" && !selectedReturnTourId) setSelectedReturnTourId(activeTours[0]?.tourId || "");
+    setActiveAction(action);
+  };
   const saveExpenseEntry = async () => {
     const amount = Number(expenseAmount);
     if (!expenseCategory.trim() || !Number.isFinite(amount) || amount <= 0) { toast("Dépense invalide", { description: "Saisissez un montant supérieur à zéro." }); return; }
@@ -234,26 +242,31 @@ export default function Home() {
     const messages = {
       production: `Production enregistrée : ${quantity} packs.`,
       sortie: `Sortie enregistrée : ${deliveryQuantity} packs confiés à ${deliveryDriver}.`,
-      retour: `Retour enregistré : ${retours} packs revenus, ${Math.max(0, packsOnRoute - Number(retours || 0))} écoulés.`,
+      retour: `Retour enregistré : ${retours} packs revenus. Le stock restant a été recalculé.`,
       vente: "Vente enregistrée. La facture est prête.",
     };
     if (!activeAction) return;
-    if ((activeAction === "sortie" || activeAction === "retour") && !deliveryDriver.trim()) { toast("Livreur manquant", { description: "Saisissez le nom du livreur avant d’enregistrer." }); return; }
+    if (activeAction === "sortie" && !deliveryDriver.trim()) { toast("Livreur manquant", { description: "Saisissez le nom du livreur avant d’enregistrer." }); return; }
+    if (activeAction === "retour" && !selectedReturnTourId) { toast("Tournée manquante", { description: "Choisissez la tournée qui revient." }); return; }
     if (activeAction === "sortie" && (!Number.isFinite(Number(deliveryQuantity)) || Number(deliveryQuantity) <= 0)) { toast("Quantité invalide", { description: "Saisissez le nombre de packs remis au livreur." }); return; }
-    if (activeAction === "retour" && (!Number.isFinite(Number(retours)) || Number(retours) < 0 || Number(retours) > Math.max(0, packsOnRoute))) { toast("Retour invalide", { description: "Saisissez un nombre entre 0 et les packs en tournée." }); return; }
+    const returnTour = activeTours.find((tour) => tour.tourId === selectedReturnTourId);
+    const expectedReturn = returnTour ? Math.max(0, (returnTour.quantity || 0) - packsSoldOnTour(returnTour.tourId)) : 0;
+    if (activeAction === "retour" && (!Number.isFinite(Number(retours)) || Number(retours) < 0 || Number(retours) > expectedReturn)) { toast("Retour invalide", { description: `Le maximum attendu pour cette tournée est ${selectedReturnExpected} packs.` }); return; }
     if (activeAction === "vente" && clientName.trim()) {
       const saleQuantityNumber = Number(saleQuantity || 0);
       const saleUnitPriceNumber = Number(saleUnitPrice || 0);
       const total = saleQuantityNumber * saleUnitPriceNumber;
       const paid = Math.min(Number(salePaid || 0), total);
       const balanceDue = Math.max(0, total - paid);
+      const chosenTour = activeTours.find((tour) => tour.tourId === selectedTourId);
+      const remainingOnTour = chosenTour ? Math.max(0, (chosenTour.quantity || 0) - packsSoldOnTour(chosenTour.tourId)) : 0;
+      if (saleOrigin === "tournee" && (!chosenTour || saleQuantityNumber <= 0 || saleQuantityNumber > remainingOnTour)) { toast("Quantité de tournée invalide", { description: chosenTour ? `Il reste ${remainingOnTour} packs pour cette tournée.` : "Choisissez une tournée active." }); return; }
       const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, "");
       const phone = clientPhone.trim().replace(/\D/g, "");
       const existing = clients.find((item) => normalize(item.name) === normalize(clientName) || (phone && item.phone?.replace(/\D/g, "") === phone));
       const updatedClient = existing ? { ...existing, phone: clientPhone.trim() || existing.phone, balance: (existing.balance || 0) + balanceDue, totalPurchased: (existing.totalPurchased || 0) + total, lastPurchase: new Date().toLocaleDateString("fr-FR") } : null;
       if (existing && existing.id && updatedClient) { await updateClient(existing.id, updatedClient); setClients((items) => items.map((item) => item.id === existing.id ? updatedClient : item)); }
       else { const result = await saveClient({ name: clientName.trim(), phone: clientPhone.trim(), balance: balanceDue, totalPurchased: total, lastPurchase: new Date().toLocaleDateString("fr-FR") }); setClients((items) => [result.item, ...items]); }
-      const chosenTour = activeTours.find((tour) => tour.tourId === selectedTourId);
       const operation = await saveOperation({ type: "vente", quantity: saleQuantityNumber, unitPrice: saleUnitPriceNumber, amount: total, paid, balanceDue, client: existing?.name || clientName.trim(), clientId: existing?.id, saleOrigin, tourId: saleOrigin === "tournee" ? chosenTour?.tourId : undefined, driver: saleOrigin === "tournee" ? chosenTour?.driver : undefined });
       setOperations((items) => [operation.operation, ...items]);
       await saveInvoice({ operationId: operation.operation.id, client: clientName.trim(), quantity: saleQuantityNumber, unitPrice: saleUnitPriceNumber, total, paid, balanceDue, createdAt: operation.operation.createdAt });
@@ -261,18 +274,18 @@ export default function Home() {
       setClientName("");
       setClientPhone("");
       setSaleQuantity("1"); setSaleUnitPrice("225"); setSalePaid("0");
-      setSaleOrigin("depot"); setSelectedTourId("");
+      setSaleOrigin("depot"); setSelectedTourId(""); setSelectedReturnTourId("");
       closeAction();
       return;
     }
     const producedQuantity = Number(quantity || 0);
     const workers = activeAction === "production" ? team.filter((member) => presentMembers.includes(member.id || member.name)).map((member) => ({ memberId: member.id || member.name, name: member.name, rate: member.commissionPerPack, quantity: producedQuantity, commission: producedQuantity * member.commissionPerPack })) : undefined;
-    const tourId = activeAction === "sortie" ? `tour-${Date.now()}` : activeAction === "retour" ? activeTours[0]?.tourId : undefined;
+    const tourId = activeAction === "sortie" ? `tour-${Date.now()}` : activeAction === "retour" ? selectedReturnTourId : undefined;
     const result = await saveOperation({
       type: activeAction,
-      quantity: activeAction === "production" ? producedQuantity : activeAction === "sortie" ? Number(deliveryQuantity) : activeAction === "retour" ? Math.max(0, packsOnRoute) : undefined,
+      quantity: activeAction === "production" ? producedQuantity : activeAction === "sortie" ? Number(deliveryQuantity) : activeAction === "retour" ? (returnTour?.quantity || 0) : undefined,
       returned: activeAction === "retour" ? Number(retours) : undefined,
-      driver: activeAction === "sortie" || activeAction === "retour" ? deliveryDriver.trim() : undefined,
+      driver: activeAction === "sortie" ? deliveryDriver.trim() : activeAction === "retour" ? (returnTour?.driver || "") : undefined,
       tourId,
       workers,
       commissionTotal: workers?.reduce((total, worker) => total + worker.commission, 0),
@@ -285,6 +298,8 @@ export default function Home() {
     setDeliveryDriver("");
     setDeliveryQuantity("");
     setRetours("");
+    setSelectedTourId("");
+    setSelectedReturnTourId("");
     closeAction();
   };
 
@@ -312,6 +327,6 @@ export default function Home() {
 
     <nav className="simple-bottom-nav"><button className="active" onClick={() => setPage("home")}><ClipboardList size={20} /><span>Accueil</span></button><button onClick={() => openAction("production")}><Plus size={22} /><span>Ajouter</span></button><button onClick={() => setPage("clients")}><UserRound size={20} /><span>Clients</span></button><button onClick={() => setMenuOpen(true)}><Menu size={20} /><span>Menu</span></button></nav>
 
-    {activeAction && <div className="simple-modal-backdrop" onMouseDown={closeAction}><div className="simple-modal" onMouseDown={e => e.stopPropagation()}><div className="simple-modal-head"><div className={`modal-action-icon ${actions.find(a => a.id === activeAction)?.color}`}>{activeAction === "production" ? <Droplets size={21} /> : activeAction === "sortie" ? <Truck size={21} /> : activeAction === "retour" ? <Package size={21} /> : <Receipt size={21} />}</div><button onClick={closeAction}><X size={19} /></button></div><p className="modal-kicker">NOUVELLE OPÉRATION</p><h2>{activeAction === "production" ? "J’ai produit des packs" : activeAction === "sortie" ? "J’ai remis au livreur" : activeAction === "retour" ? "Le livreur est revenu" : "J’ai vendu à un client"}</h2><p className="modal-help">Remplissez seulement ce qui est nécessaire. Le reste est calculé automatiquement.</p>{activeAction === "production" && <><label>Combien de packs avez-vous produits ?<div className="simple-input-wrap"><input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} /><span>packs</span></div></label><div className="worker-picker"><strong>Qui était présent ?</strong>{team.length === 0 && <small>Ajoutez les personnes dans Menu → Mon équipe.</small>}{team.filter(member => member.active).map(member => <label key={member.id || member.name} className="worker-option"><input type="checkbox" checked={presentMembers.includes(member.id || member.name)} onChange={event => setPresentMembers((items) => event.target.checked ? [...items, member.id || member.name] : items.filter(item => item !== (member.id || member.name)))} /><span>{member.name}</span><b>{member.commissionPerPack} F / pack</b></label>)}{presentMembers.length > 0 && <div className="simple-calculation"><span>Commission totale</span><strong>{team.filter(member => presentMembers.includes(member.id || member.name)).reduce((total, member) => total + Number(quantity || 0) * member.commissionPerPack, 0).toLocaleString("fr-FR")} F</strong></div>}</div></>}{activeAction === "sortie" && <><label>Quel livreur ?<input value={deliveryDriver} onChange={event => setDeliveryDriver(event.target.value)} placeholder="Ex. Moussa" /></label><label>Combien de packs remis ?<div className="simple-input-wrap"><input type="number" min="1" value={deliveryQuantity} onChange={event => setDeliveryQuantity(event.target.value)} placeholder="Ex. 150" /><span>packs</span></div></label></>}{activeAction === "retour" && <><label>Quel livreur ?<input value={deliveryDriver} onChange={event => setDeliveryDriver(event.target.value)} placeholder="Ex. Moussa" /></label><div className="two-inputs"><label>Packs actuellement en tournée<input value={Math.max(0, packsOnRoute)} readOnly /></label><label>Packs retournés<input type="number" min="0" max={Math.max(0, packsOnRoute)} value={retours} onChange={e => setRetours(e.target.value)} placeholder="Ex. 20" /></label></div><div className="simple-calculation"><span>Packs écoulés</span><strong>{Math.max(0, packsOnRoute - Number(retours || 0))} packs</strong></div></>}{activeAction === "vente" && <><div className="sale-origin-picker"><strong>Où la vente a-t-elle été faite ?</strong><div className="sale-origin-buttons"><button type="button" className={saleOrigin === "depot" ? "selected" : ""} onClick={() => setSaleOrigin("depot")}>Au dépôt</button><button type="button" className={saleOrigin === "tournee" ? "selected" : ""} onClick={() => { setSaleOrigin("tournee"); if (!selectedTourId) setSelectedTourId(activeTours[0]?.tourId || ""); }}>En tournée</button></div>{saleOrigin === "tournee" && <select value={selectedTourId} onChange={(event) => setSelectedTourId(event.target.value)}><option value="">Choisir la tournée</option>{activeTours.map((tour) => <option key={tour.tourId} value={tour.tourId}>{tour.driver || "Livreur"} · {tour.quantity || 0} packs remis</option>)}</select>}</div><label>Nom du client<input value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ex. Boutique Alpha" /></label><div className="client-return-hint">{clients.find((item) => item.name.trim().toLowerCase().replace(/\s+/g, "") === clientName.trim().toLowerCase().replace(/\s+/g, "") || (clientPhone.replace(/\D/g, "") && item.phone?.replace(/\D/g, "") === clientPhone.replace(/\D/g, ""))) ? <small>Client revenu reconnu : la dette et l’historique seront cumulés.</small> : <small>Nouveau client si aucun nom ou téléphone ne correspond.</small>}</div><label>Téléphone<input value={clientPhone} onChange={event => setClientPhone(event.target.value)} placeholder="Ex. 70 00 00 00" /></label><div className="two-inputs"><label>Quantité<input type="number" min="1" value={saleQuantity} onChange={event => setSaleQuantity(event.target.value)} /></label><label>Prix du pack<input type="number" min="0" value={saleUnitPrice} onChange={event => setSaleUnitPrice(event.target.value)} /></label></div><label>Montant payé<div className="simple-input-wrap"><input type="number" min="0" value={salePaid} onChange={event => setSalePaid(event.target.value)} /><span>F</span></div></label><div className="simple-calculation"><span>Reste à payer</span><strong>{Math.max(0, Number(saleQuantity || 0) * Number(saleUnitPrice || 0) - Number(salePaid || 0)).toLocaleString("fr-FR")} F</strong></div></>}<div className="simple-modal-actions"><button className="cancel-button" onClick={closeAction}>Annuler</button><button className="save-button" onClick={saveAction}><Check size={17} /> Enregistrer</button></div></div></div>}
+    {activeAction && <div className="simple-modal-backdrop" onMouseDown={closeAction}><div className="simple-modal" onMouseDown={e => e.stopPropagation()}><div className="simple-modal-head"><div className={`modal-action-icon ${actions.find(a => a.id === activeAction)?.color}`}>{activeAction === "production" ? <Droplets size={21} /> : activeAction === "sortie" ? <Truck size={21} /> : activeAction === "retour" ? <Package size={21} /> : <Receipt size={21} />}</div><button onClick={closeAction}><X size={19} /></button></div><p className="modal-kicker">NOUVELLE OPÉRATION</p><h2>{activeAction === "production" ? "J’ai produit des packs" : activeAction === "sortie" ? "J’ai remis au livreur" : activeAction === "retour" ? "Le livreur est revenu" : "J’ai vendu à un client"}</h2><p className="modal-help">Remplissez seulement ce qui est nécessaire. Le reste est calculé automatiquement.</p>{activeAction === "production" && <><label>Combien de packs avez-vous produits ?<div className="simple-input-wrap"><input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} /><span>packs</span></div></label><div className="worker-picker"><strong>Qui était présent ?</strong>{team.length === 0 && <small>Ajoutez les personnes dans Menu → Mon équipe.</small>}{team.filter(member => member.active).map(member => <label key={member.id || member.name} className="worker-option"><input type="checkbox" checked={presentMembers.includes(member.id || member.name)} onChange={event => setPresentMembers((items) => event.target.checked ? [...items, member.id || member.name] : items.filter(item => item !== (member.id || member.name)))} /><span>{member.name}</span><b>{member.commissionPerPack} F / pack</b></label>)}{presentMembers.length > 0 && <div className="simple-calculation"><span>Commission totale</span><strong>{team.filter(member => presentMembers.includes(member.id || member.name)).reduce((total, member) => total + Number(quantity || 0) * member.commissionPerPack, 0).toLocaleString("fr-FR")} F</strong></div>}</div></>}{activeAction === "sortie" && <><label>Quel livreur ?<input value={deliveryDriver} onChange={event => setDeliveryDriver(event.target.value)} placeholder="Ex. Moussa" /></label><label>Combien de packs remis ?<div className="simple-input-wrap"><input type="number" min="1" value={deliveryQuantity} onChange={event => setDeliveryQuantity(event.target.value)} placeholder="Ex. 150" /><span>packs</span></div></label></>}{activeAction === "retour" && <>{<label>Quelle tournée revient ?<select value={selectedReturnTourId} onChange={event => setSelectedReturnTourId(event.target.value)}><option value="">Choisir la tournée</option>{activeTours.map((tour) => <option key={tour.tourId} value={tour.tourId}>{tour.driver || "Livreur"} · {tour.quantity || 0} packs remis</option>)}</select></label>}{selectedReturnTour && <><div className="two-inputs"><label>Packs remis<input value={selectedReturnTour.quantity || 0} readOnly /></label><label>Packs vendus<input value={packsSoldOnTour(selectedReturnTour.tourId)} readOnly /></label></div><label>Packs réellement retournés<input type="number" min="0" max={selectedReturnExpected} value={retours} onChange={e => setRetours(e.target.value)} placeholder={`Attendu : ${selectedReturnExpected}`} /></label><div className="simple-calculation"><span>Retour attendu</span><strong>{selectedReturnExpected} packs</strong></div><div className="simple-calculation"><span>Écart</span><strong>{Math.max(0, selectedReturnExpected - Number(retours || 0))} packs</strong></div></>}</>}{activeAction === "vente" && <><div className="sale-origin-picker"><strong>Où la vente a-t-elle été faite ?</strong><div className="sale-origin-buttons"><button type="button" className={saleOrigin === "depot" ? "selected" : ""} onClick={() => setSaleOrigin("depot")}>Au dépôt</button><button type="button" className={saleOrigin === "tournee" ? "selected" : ""} onClick={() => { setSaleOrigin("tournee"); if (!selectedTourId) setSelectedTourId(activeTours[0]?.tourId || ""); }}>En tournée</button></div>{saleOrigin === "tournee" && <select value={selectedTourId} onChange={(event) => setSelectedTourId(event.target.value)}><option value="">Choisir la tournée</option>{activeTours.map((tour) => <option key={tour.tourId} value={tour.tourId}>{tour.driver || "Livreur"} · {tour.quantity || 0} packs remis</option>)}</select>}</div><label>Nom du client<input value={clientName} onChange={event => setClientName(event.target.value)} placeholder="Ex. Boutique Alpha" /></label><div className="client-return-hint">{clients.find((item) => item.name.trim().toLowerCase().replace(/\s+/g, "") === clientName.trim().toLowerCase().replace(/\s+/g, "") || (clientPhone.replace(/\D/g, "") && item.phone?.replace(/\D/g, "") === clientPhone.replace(/\D/g, ""))) ? <small>Client revenu reconnu : la dette et l’historique seront cumulés.</small> : <small>Nouveau client si aucun nom ou téléphone ne correspond.</small>}</div><label>Téléphone<input value={clientPhone} onChange={event => setClientPhone(event.target.value)} placeholder="Ex. 70 00 00 00" /></label><div className="two-inputs"><label>Quantité<input type="number" min="1" value={saleQuantity} onChange={event => setSaleQuantity(event.target.value)} /></label><label>Prix du pack<input type="number" min="0" value={saleUnitPrice} onChange={event => setSaleUnitPrice(event.target.value)} /></label></div><label>Montant payé<div className="simple-input-wrap"><input type="number" min="0" value={salePaid} onChange={event => setSalePaid(event.target.value)} /><span>F</span></div></label><div className="simple-calculation"><span>Reste à payer</span><strong>{Math.max(0, Number(saleQuantity || 0) * Number(saleUnitPrice || 0) - Number(salePaid || 0)).toLocaleString("fr-FR")} F</strong></div></>}<div className="simple-modal-actions"><button className="cancel-button" onClick={closeAction}>Annuler</button><button className="save-button" onClick={saveAction}><Check size={17} /> Enregistrer</button></div></div></div>}
   </div>;
 }
